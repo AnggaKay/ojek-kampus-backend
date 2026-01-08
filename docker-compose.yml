@@ -1,44 +1,44 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  # 1. Service Aplikasi Backend (Go)
+  # --- 1. SERVICE BACKEND
   api:
+    container_name: ojek_backend
     build: .
-    container_name: ojek_backend_container
     ports:
-      - "8080:8080"  # Akses dari luar (Host) : Port di dalam container
+      - "8080:8080"
     environment:
-      - DB_HOST=postgres_db # PENTING: Nama service database di bawah
-      - DB_PORT=5432
-      - DB_USER=ojek_app_user
-      - DB_PASSWORD=AnggaKay001
-      - DB_NAME=ojek_kampus_db
+      - DB_HOST=postgres_db
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - PORT=${PORT}
+      - TZ=${TZ}
     depends_on:
-      - db # Tunggu database nyala dulu baru aplikasi nyala
+      - db
     networks:
-      - ojek-network
+      - ojek_net
 
-  # 2. Service Database (PostgreSQL)
   db:
+    container_name: ojek_db
     image: postgres:15-alpine
-    container_name: ojek_db_container
     restart: always
     environment:
-      POSTGRES_USER: ojek_app_user
-      POSTGRES_PASSWORD: password_rahasia_dan_panjang
-      POSTGRES_DB: ojek_kampus_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      TZ: ${TZ}
     ports:
-      - "5432:5432" # Agar DBeaver di laptop Anda tetap bisa connect
+      - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data # Agar data TIDAK HILANG saat docker dimatikan
+      - pgdata:/var/lib/postgresql/data
     networks:
-      - ojek-network
+      - ojek_net
 
-# Network agar kedua container bisa saling sapa
 networks:
-  ojek-network:
+  ojek_net:
     driver: bridge
 
-# Volume untuk menyimpan data fisik database
 volumes:
   pgdata:

@@ -1,85 +1,93 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 
+	"github.com/AnggaKay/ojek-kampus-backend/internal/handler"
+	"github.com/AnggaKay/ojek-kampus-backend/internal/middleware"
+	"github.com/AnggaKay/ojek-kampus-backend/internal/repository"
+	"github.com/AnggaKay/ojek-kampus-backend/internal/service"
+	"github.com/AnggaKay/ojek-kampus-backend/pkg/database"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
-
-	_ "github.com/jackc/pgx/v5/stdlib" // Driver PostgreSQL
+	echoMiddleware "github.com/labstack/echo/v4/middleware"
 )
 
 func main() {
-	// 1. Load file .env (Konfigurasi rahasia)
+	// Load environment variables
 	if err := godotenv.Load(); err != nil {
 		log.Println("Warning: .env file not found, using system env")
 	}
 
-	// 2. Setup Database (PostgreSQL)
-	// Format: postgres://user:password@host:port/dbname
-	dbHost := os.Getenv("DB_HOST")
-	dbPort := os.Getenv("DB_PORT")
-	dbUser := os.Getenv("DB_USER")
-	dbPass := os.Getenv("DB_PASSWORD")
-	dbName := os.Getenv("DB_NAME")
-
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s", dbUser, dbPass, dbHost, dbPort, dbName)
-	db, err := sql.Open("pgx", dsn)
+	// Initialize database connection pool
+	db, err := database.NewPostgresPool()
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
 	defer db.Close()
 
-	// Tes koneksi DB
-	if err := db.Ping(); err != nil {
-		log.Fatal("Database not reachable:", err)
-	}
-	fmt.Println("✅ Database Connected Successfully!")
+	// Initialize repositories
+	userRepo := repository.NewUserRepository(db)
+	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
 
-	// 3. Setup Framework Echo
+	// Initialize services
+	authService := service.NewAuthService(userRepo, refreshTokenRepo)
+
+	// Initialize handlers
+	healthHandler := handler.NewHealthHandler()
+	authHandler := handler.NewAuthHandler(authService)
+
+	// Initialize Echo
 	e := echo.New()
+	e.HideBanner = true
 
-	// --- MIDDLEWARE PENTING UNTUK REACT ---
-	e.Use(middleware.Logger())  // Supaya terlihat log request di terminal
-	e.Use(middleware.Recover()) // Supaya server tidak crash kalau ada panic
+	// Set custom validator
+	e.Validator = middleware.NewValidator()
 
-	// CORS: Mengizinkan Frontend React akses API ini
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"}, // Di production ganti "*" dengan domain asli
-		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
-		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
-	}))
+	// Global middlewares
+	e.Use(echoMiddleware.Logger())
+	e.Use(echoMiddleware.Recover())
+	e.Use(middleware.CORS())
 
-	// 4. Routes (Endpoint API)
-	e.GET("/", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{
-			"message": "Welcome to Ojek Kampus API 🚀",
-			"status":  "active",
-		})
-	})
+	// Routes
+	// Health check
+	e.GET("/health", healthHandler.Check)
+	e.GET("/", healthHandler.Check)
 
-	// Contoh Endpoint Login (Dummy) untuk dites Frontend
-	e.POST("/login", func(c echo.Context) error {
-		// Simulasi respon login
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"token": "eyJhbGciOiJIUz...",
-			"user": map[string]interface{}{
-				"id":   1,
-				"name": "Maba Teknik",
-				"role": "PASSENGER",
-			},
-		})
-	})
+	// API v1 routes
+	api := e.Group("/api")
 
-	// 5. Jalankan Server di Port 8080
+	// Auth routes (public)
+	auth := api.Group("/auth")
+	auth.POST("/register/passenger", authHandler.RegisterPassenger)
+	auth.POST("/login", authHandler.Login)
+	auth.POST("/refresh", authHandler.RefreshToken)
+	auth.POST("/logout", authHandler.Logout)
+
+	// Protected routes
+	authProtected := api.Group("/auth")
+	authProtected.Use(middleware.JWTAuth())
+	authProtected.GET("/me", authHandler.GetProfile)
+
+	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	e.Logger.Fatal(e.Start(":" + port))
+
+	fmt.Printf("\n🚀 Server starting on port %s...\n", port)
+	fmt.Println("📋 Available endpoints:")
+	fmt.Println("   GET  /health")
+	fmt.Println("   POST /api/auth/register/passenger")
+	fmt.Println("   POST /api/auth/login")
+	fmt.Println("   POST /api/auth/refresh")
+	fmt.Println("   POST /api/auth/logout")
+	fmt.Println("   GET  /api/auth/me (protected)")
+	fmt.Println()
+
+	if err := e.Start(":" + port); err != nil {
+		log.Fatal("Failed to start server:", err)
+	}
 }
