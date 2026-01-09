@@ -11,7 +11,9 @@ import (
 	"github.com/AnggaKay/ojek-kampus-backend/internal/dto"
 	"github.com/AnggaKay/ojek-kampus-backend/internal/entity"
 	"github.com/AnggaKay/ojek-kampus-backend/internal/repository"
+	"github.com/AnggaKay/ojek-kampus-backend/pkg/constants"
 	jwtPkg "github.com/AnggaKay/ojek-kampus-backend/pkg/jwt"
+	"github.com/AnggaKay/ojek-kampus-backend/pkg/logger"
 	"github.com/AnggaKay/ojek-kampus-backend/pkg/password"
 	"github.com/AnggaKay/ojek-kampus-backend/pkg/utils"
 )
@@ -36,32 +38,46 @@ func NewAuthService(userRepo repository.UserRepository, refreshTokenRepo reposit
 }
 
 func (s *authService) RegisterPassenger(ctx context.Context, req dto.RegisterRequest) (*dto.AuthResponse, error) {
+	logger.Log.Info().Str("phone", req.PhoneNumber).Msg("Passenger registration attempt")
+
 	// Validate password
 	if err := utils.ValidatePassword(req.Password); err != nil {
+		logger.Log.Warn().Err(err).Str("phone", req.PhoneNumber).Msg("Password validation failed")
 		return nil, err
 	}
 
 	// Normalize phone number
 	phoneNumber := utils.NormalizePhoneNumber(req.PhoneNumber)
 
-	// Check if phone already exists
-	existing, _ := s.userRepo.FindByPhoneNumber(ctx, phoneNumber)
-	if existing != nil {
-		return nil, fmt.Errorf("phone number already registered")
+	// Check if phone already exists (using optimized Exists method)
+	phoneExists, err := s.userRepo.ExistsByPhoneNumber(ctx, phoneNumber)
+	if err != nil {
+		logger.Log.Error().Err(err).Str("phone", phoneNumber).Msg("Failed to check phone existence")
+		return nil, fmt.Errorf("failed to check phone availability")
+	}
+	if phoneExists {
+		logger.Log.Warn().Str("phone", phoneNumber).Msg("Phone number already registered")
+		return nil, fmt.Errorf(constants.ErrPhoneAlreadyRegistered)
 	}
 
 	// Check email if provided
 	if req.Email != nil && *req.Email != "" {
-		existing, _ := s.userRepo.FindByEmail(ctx, *req.Email)
-		if existing != nil {
-			return nil, fmt.Errorf("email already registered")
+		emailExists, err := s.userRepo.ExistsByEmail(ctx, *req.Email)
+		if err != nil {
+			logger.Log.Error().Err(err).Str("email", *req.Email).Msg("Failed to check email existence")
+			return nil, fmt.Errorf("failed to check email availability")
+		}
+		if emailExists {
+			logger.Log.Warn().Str("email", *req.Email).Msg("Email already registered")
+			return nil, fmt.Errorf(constants.ErrEmailAlreadyRegistered)
 		}
 	}
 
 	// Hash password
 	hashedPassword, err := password.Hash(req.Password)
 	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
+		logger.Log.Error().Err(err).Msg("Failed to hash password")
+		return nil, fmt.Errorf(constants.ErrFailedToHashPassword+": %w", err)
 	}
 
 	// Create user
@@ -76,19 +92,26 @@ func (s *authService) RegisterPassenger(ctx context.Context, req dto.RegisterReq
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
+		logger.Log.Error().Err(err).Str("phone", phoneNumber).Msg("Failed to create user")
+		return nil, fmt.Errorf(constants.ErrFailedToCreateUser+": %w", err)
 	}
+
+	logger.Log.Info().Int("user_id", user.ID).Str("phone", phoneNumber).Msg("User created successfully")
 
 	// Generate tokens
 	accessToken, err := jwtPkg.GenerateAccessToken(user.ID, user.Role, string(user.Role))
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to generate access token")
+		return nil, fmt.Errorf(constants.ErrFailedToGenerateToken+": %w", err)
 	}
 
 	refreshToken, err := s.createRefreshToken(ctx, user.ID, string(user.Role), req.PhoneNumber)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+		logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to generate refresh token")
+		return nil, fmt.Errorf(constants.ErrFailedToGenerateToken+": %w", err)
 	}
+
+	logger.Log.Info().Int("user_id", user.ID).Msg("Registration completed successfully")
 
 	return &dto.AuthResponse{
 		User: &dto.UserResponse{
@@ -102,7 +125,7 @@ func (s *authService) RegisterPassenger(ctx context.Context, req dto.RegisterReq
 		},
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		ExpiresIn:    900, // 15 minutes
+		ExpiresIn:    int(constants.AccessTokenTTL.Seconds()),
 	}, nil
 }
 
@@ -110,37 +133,47 @@ func (s *authService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Aut
 	// Normalize phone number
 	phoneNumber := utils.NormalizePhoneNumber(req.PhoneNumber)
 
+	logger.Log.Info().Str("phone", phoneNumber).Msg("Login attempt")
+
 	// Find user
 	user, err := s.userRepo.FindByPhoneNumber(ctx, phoneNumber)
 	if err != nil {
-		return nil, fmt.Errorf("invalid phone number or password")
+		logger.Log.Warn().Str("phone", phoneNumber).Msg("Login failed: user not found")
+		return nil, fmt.Errorf(constants.ErrInvalidCredentials)
 	}
 
 	// Verify password
 	if !password.Verify(user.PasswordHash, req.Password) {
-		return nil, fmt.Errorf("invalid phone number or password")
+		logger.Log.Warn().Int("user_id", user.ID).Str("phone", phoneNumber).Msg("Login failed: invalid password")
+		return nil, fmt.Errorf(constants.ErrInvalidCredentials)
 	}
 
 	// Check if account is suspended
 	if user.Status == entity.StatusSuspended {
-		return nil, fmt.Errorf("account is suspended")
+		logger.Log.Warn().Int("user_id", user.ID).Msg("Login attempt on suspended account")
+		return nil, fmt.Errorf(constants.ErrAccountSuspended)
 	}
 
 	// Update last login
 	if err := s.userRepo.UpdateLastLogin(ctx, user.ID); err != nil {
-		// Log error but don't fail login
+		logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to update last login")
+		// Don't fail login for this
 	}
 
 	// Generate tokens
 	accessToken, err := jwtPkg.GenerateAccessToken(user.ID, user.Role, string(user.Role))
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to generate access token")
+		return nil, fmt.Errorf(constants.ErrFailedToGenerateToken+": %w", err)
 	}
 
 	refreshToken, err := s.createRefreshToken(ctx, user.ID, string(user.Role), req.DeviceInfo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+		logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to generate refresh token")
+		return nil, fmt.Errorf(constants.ErrFailedToGenerateToken+": %w", err)
 	}
+
+	logger.Log.Info().Int("user_id", user.ID).Str("phone", phoneNumber).Msg("Login successful")
 
 	return &dto.AuthResponse{
 		User: &dto.UserResponse{
@@ -154,69 +187,89 @@ func (s *authService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Aut
 		},
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
-		ExpiresIn:    900,
+		ExpiresIn:    int(constants.AccessTokenTTL.Seconds()),
 	}, nil
 }
 
 func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenResponse, error) {
+	logger.Log.Debug().Msg("Refresh token attempt")
+
 	// Hash the refresh token
 	tokenHash := hashToken(refreshToken)
 
 	// Find token in database
 	token, err := s.refreshTokenRepo.FindByTokenHash(ctx, tokenHash)
 	if err != nil {
-		return nil, fmt.Errorf("invalid refresh token")
+		logger.Log.Warn().Msg("Invalid refresh token provided")
+		return nil, fmt.Errorf(constants.ErrInvalidRefreshToken)
 	}
 
 	// Check if revoked
 	if token.IsRevoked {
-		return nil, fmt.Errorf("token has been revoked")
+		logger.Log.Warn().Int("token_id", token.ID).Int("user_id", token.UserID).Msg("Attempted to use revoked token")
+		return nil, fmt.Errorf(constants.ErrTokenRevoked)
 	}
 
 	// Check if expired
 	if token.ExpiresAt.Before(time.Now()) {
-		return nil, fmt.Errorf("token has expired")
+		logger.Log.Warn().Int("token_id", token.ID).Int("user_id", token.UserID).Msg("Attempted to use expired token")
+		return nil, fmt.Errorf(constants.ErrTokenExpired)
 	}
 
 	// Update last used
 	if err := s.refreshTokenRepo.UpdateLastUsed(ctx, token.ID); err != nil {
-		// Log error but don't fail
+		logger.Log.Error().Err(err).Int("token_id", token.ID).Msg("Failed to update token last used")
+		// Don't fail refresh for this
 	}
 
 	// Find user
 	user, err := s.userRepo.FindByID(ctx, token.UserID)
 	if err != nil {
-		return nil, fmt.Errorf("user not found")
+		logger.Log.Error().Err(err).Int("user_id", token.UserID).Msg("User not found for valid token")
+		return nil, fmt.Errorf(constants.ErrUserNotFound)
 	}
 
 	// Generate new access token
 	accessToken, err := jwtPkg.GenerateAccessToken(user.ID, user.Role, token.UserType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to generate access token")
+		return nil, fmt.Errorf(constants.ErrFailedToGenerateToken+": %w", err)
 	}
+
+	logger.Log.Info().Int("user_id", user.ID).Msg("Token refreshed successfully")
 
 	return &dto.TokenResponse{
 		AccessToken: accessToken,
-		ExpiresIn:   900,
+		ExpiresIn:   int(constants.AccessTokenTTL.Seconds()),
 	}, nil
 }
 
 func (s *authService) Logout(ctx context.Context, refreshToken string) error {
+	logger.Log.Debug().Msg("Logout attempt")
+
 	tokenHash := hashToken(refreshToken)
 
 	token, err := s.refreshTokenRepo.FindByTokenHash(ctx, tokenHash)
 	if err != nil {
-		return fmt.Errorf("invalid refresh token")
+		logger.Log.Warn().Msg("Invalid refresh token on logout")
+		return fmt.Errorf(constants.ErrInvalidRefreshToken)
 	}
 
-	return s.refreshTokenRepo.Revoke(ctx, token.ID, "LOGOUT")
+	if err := s.refreshTokenRepo.Revoke(ctx, token.ID, constants.RevokeReasonLogout); err != nil {
+		logger.Log.Error().Err(err).Int("token_id", token.ID).Msg("Failed to revoke token")
+		return err
+	}
+
+	logger.Log.Info().Int("user_id", token.UserID).Int("token_id", token.ID).Msg("Logout successful")
+	return nil
 }
 
 // Helper functions
 func (s *authService) createRefreshToken(ctx context.Context, userID int, userType, deviceInfo string) (string, error) {
 	// Generate random token
-	tokenBytes := make([]byte, 32)
+	tokenBytes := make([]byte, constants.RefreshTokenBytes)
 	if _, err := rand.Read(tokenBytes); err != nil {
+		logger.Log.Error().Err(err).Msg("Failed to generate random bytes for refresh token")
 		return "", err
 	}
 	token := hex.EncodeToString(tokenBytes)
@@ -230,11 +283,12 @@ func (s *authService) createRefreshToken(ctx context.Context, userID int, userTy
 		UserType:   userType,
 		TokenHash:  tokenHash,
 		DeviceInfo: &deviceInfo,
-		ExpiresAt:  time.Now().Add(7 * 24 * time.Hour), // 7 days
+		ExpiresAt:  time.Now().Add(constants.RefreshTokenTTL),
 		IsRevoked:  false,
 	}
 
 	if err := s.refreshTokenRepo.Create(ctx, refreshToken); err != nil {
+		logger.Log.Error().Err(err).Int("user_id", userID).Msg("Failed to save refresh token")
 		return "", err
 	}
 

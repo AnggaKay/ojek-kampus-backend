@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/AnggaKay/ojek-kampus-backend/internal/handler"
 	"github.com/AnggaKay/ojek-kampus-backend/internal/middleware"
 	"github.com/AnggaKay/ojek-kampus-backend/internal/repository"
 	"github.com/AnggaKay/ojek-kampus-backend/internal/service"
+	"github.com/AnggaKay/ojek-kampus-backend/pkg/config"
 	"github.com/AnggaKay/ojek-kampus-backend/pkg/database"
+	"github.com/AnggaKay/ojek-kampus-backend/pkg/logger"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
@@ -21,12 +22,24 @@ func main() {
 		log.Println("Warning: .env file not found, using system env")
 	}
 
+	// Load configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatal("Failed to load configuration:", err)
+	}
+
+	// Initialize logger
+	logger.InitLogger(cfg.Server.Environment)
+	logger.Log.Info().Str("environment", cfg.Server.Environment).Msg("Starting Ojek Kampus Backend")
+
 	// Initialize database connection pool
 	db, err := database.NewPostgresPool()
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		logger.Log.Fatal().Err(err).Msg("Failed to connect to database")
 	}
 	defer db.Close()
+
+	logger.Log.Info().Msg("Database connection established")
 
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
@@ -72,12 +85,8 @@ func main() {
 	authProtected.GET("/me", authHandler.GetProfile)
 
 	// Start server
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	fmt.Printf("\n🚀 Server starting on port %s...\n", port)
+	logger.Log.Info().Str("port", cfg.Server.Port).Msg("Server starting")
+	fmt.Printf("\n🚀 Server starting on port %s...\n", cfg.Server.Port)
 	fmt.Println("📋 Available endpoints:")
 	fmt.Println("   GET  /health")
 	fmt.Println("   POST /api/auth/register/passenger")
@@ -87,7 +96,7 @@ func main() {
 	fmt.Println("   GET  /api/auth/me (protected)")
 	fmt.Println()
 
-	if err := e.Start(":" + port); err != nil {
-		log.Fatal("Failed to start server:", err)
+	if err := e.Start(":" + cfg.Server.Port); err != nil {
+		logger.Log.Fatal().Err(err).Msg("Failed to start server")
 	}
 }

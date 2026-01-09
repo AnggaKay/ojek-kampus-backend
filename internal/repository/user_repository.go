@@ -14,6 +14,8 @@ type UserRepository interface {
 	FindByID(ctx context.Context, id int) (*entity.User, error)
 	FindByPhoneNumber(ctx context.Context, phoneNumber string) (*entity.User, error)
 	FindByEmail(ctx context.Context, email string) (*entity.User, error)
+	ExistsByPhoneNumber(ctx context.Context, phoneNumber string) (bool, error)
+	ExistsByEmail(ctx context.Context, email string) (bool, error)
 	Update(ctx context.Context, user *entity.User) error
 	UpdateLastLogin(ctx context.Context, userID int) error
 	UpdatePhoneVerified(ctx context.Context, userID int, verified bool) error
@@ -157,4 +159,18 @@ func (r *userRepository) UpdatePhoneVerified(ctx context.Context, userID int, ve
 	query := `UPDATE users SET phone_verified = $1, updated_at = NOW() WHERE id = $2`
 	_, err := r.db.Exec(ctx, query, verified, userID)
 	return err
+}
+
+func (r *userRepository) ExistsByPhoneNumber(ctx context.Context, phoneNumber string) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM users WHERE phone_number = $1)`
+	var exists bool
+	err := r.db.QueryRow(ctx, query, phoneNumber).Scan(&exists)
+	return exists, err
+}
+
+func (r *userRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)`
+	var exists bool
+	err := r.db.QueryRow(ctx, query, email).Scan(&exists)
+	return exists, err
 }
