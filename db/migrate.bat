@@ -28,6 +28,7 @@ docker exec -i ojek_db psql -U AnggaKay -d ojek_kampus_db < db/migrations/004_cr
 docker exec -i ojek_db psql -U AnggaKay -d ojek_kampus_db < db/migrations/005_create_otp_codes.up.sql
 docker exec -i ojek_db psql -U AnggaKay -d ojek_kampus_db < db/migrations/006_create_refresh_tokens.up.sql
 docker exec -i ojek_db psql -U AnggaKay -d ojek_kampus_db < db/migrations/007_add_ktm_to_driver_profiles.up.sql
+docker exec -i ojek_db psql -U AnggaKay -d ojek_kampus_db < db/migrations/008_enforce_motor_only.up.sql
 
 echo.
 echo ================================================

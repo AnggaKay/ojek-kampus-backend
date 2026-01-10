@@ -28,6 +28,13 @@ const (
 
 	// Server
 	DefaultPort = "8080"
+
+	// File Upload
+	MaxFileSize        = 5 * 1024 * 1024  // 5MB
+	MaxTotalUploadSize = 20 * 1024 * 1024 // 20MB (4 files x 5MB)
+	UploadDirectory    = "uploads"
+	AllowedImageTypes  = "image/jpeg,image/png"
+	AllowedDocTypes    = "application/pdf"
 )
 
 // Error messages
@@ -43,6 +50,15 @@ const (
 	ErrFailedToHashPassword   = "failed to hash password"
 	ErrFailedToCreateUser     = "failed to create user"
 	ErrFailedToGenerateToken  = "failed to generate token"
+
+	// Driver-specific errors
+	ErrVehiclePlateExists = "vehicle plate already registered"
+	ErrInvalidFileType    = "invalid file type"
+	ErrFileTooLarge       = "file size exceeds maximum limit"
+	ErrFailedToUploadFile = "failed to upload file"
+	ErrDriverNotVerified  = "driver account is not verified yet"
+	ErrDocumentNotFound   = "document not found"
+	ErrUnauthorizedAccess = "unauthorized access to document"
 )
 
 // Revoke reasons
@@ -51,4 +67,24 @@ const (
 	RevokeReasonPasswordChange = "PASSWORD_CHANGE"
 	RevokeReasonSecurity       = "SECURITY"
 	RevokeReasonExpired        = "EXPIRED"
+)
+
+// Vehicle types (Motor only - Ojek Kampus focuses on motorcycle transportation)
+const (
+	VehicleTypeMotor = "MOTOR"
+)
+
+// Document types
+const (
+	DocumentTypeKTP  = "KTP"
+	DocumentTypeSIM  = "SIM"
+	DocumentTypeSTNK = "STNK"
+	DocumentTypeKTM  = "KTM"
+)
+
+// Driver verification status
+const (
+	VerificationStatusPending  = "PENDING_VERIFICATION"
+	VerificationStatusVerified = "VERIFIED"
+	VerificationStatusRejected = "REJECTED"
 )

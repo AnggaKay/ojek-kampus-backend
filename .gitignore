@@ -17,3 +17,13 @@ main
 # OS Specific
 .DS_Store
 Thumbs.db
+
+# Uploaded Files (keep directory structure with .gitkeep)
+uploads/*
+!uploads/.gitkeep
+uploads/drivers/*
+!uploads/drivers/.gitkeep
+
+db/
+postman/
+docs/

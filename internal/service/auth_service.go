@@ -2,9 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -20,20 +17,31 @@ import (
 
 type AuthService interface {
 	RegisterPassenger(ctx context.Context, req dto.RegisterRequest) (*dto.AuthResponse, error)
-	Login(ctx context.Context, req dto.LoginRequest) (*dto.AuthResponse, error)
+	Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
 	RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenResponse, error)
 	Logout(ctx context.Context, refreshToken string) error
 }
 
 type authService struct {
 	userRepo         repository.UserRepository
+	passengerRepo    repository.PassengerRepository
+	driverRepo       repository.DriverRepository
 	refreshTokenRepo repository.RefreshTokenRepository
+	tokenHelper      *TokenHelper
 }
 
-func NewAuthService(userRepo repository.UserRepository, refreshTokenRepo repository.RefreshTokenRepository) AuthService {
+func NewAuthService(
+	userRepo repository.UserRepository,
+	passengerRepo repository.PassengerRepository,
+	driverRepo repository.DriverRepository,
+	refreshTokenRepo repository.RefreshTokenRepository,
+) AuthService {
 	return &authService{
 		userRepo:         userRepo,
+		passengerRepo:    passengerRepo,
+		driverRepo:       driverRepo,
 		refreshTokenRepo: refreshTokenRepo,
+		tokenHelper:      NewTokenHelper(refreshTokenRepo),
 	}
 }
 
@@ -98,6 +106,24 @@ func (s *authService) RegisterPassenger(ctx context.Context, req dto.RegisterReq
 
 	logger.Log.Info().Int("user_id", user.ID).Str("phone", phoneNumber).Msg("User created successfully")
 
+	// Create passenger profile
+	passengerProfile := &entity.PassengerProfile{
+		UserID:                user.ID,
+		EmergencyContactName:  nil,
+		EmergencyContactPhone: nil,
+		HomeAddress:           nil,
+		TotalCompletedOrders:  0,
+	}
+
+	if err := s.passengerRepo.Create(ctx, passengerProfile); err != nil {
+		logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to create passenger profile")
+		// Note: User already created, but profile creation failed
+		// In production, consider transaction rollback
+		return nil, fmt.Errorf("failed to create passenger profile: %w", err)
+	}
+
+	logger.Log.Info().Int("passenger_id", passengerProfile.ID).Int("user_id", user.ID).Msg("Passenger profile created successfully")
+
 	// Generate tokens
 	accessToken, err := jwtPkg.GenerateAccessToken(user.ID, user.Role, string(user.Role))
 	if err != nil {
@@ -129,7 +155,7 @@ func (s *authService) RegisterPassenger(ctx context.Context, req dto.RegisterReq
 	}, nil
 }
 
-func (s *authService) Login(ctx context.Context, req dto.LoginRequest) (*dto.AuthResponse, error) {
+func (s *authService) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
 	// Normalize phone number
 	phoneNumber := utils.NormalizePhoneNumber(req.PhoneNumber)
 
@@ -173,9 +199,8 @@ func (s *authService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Aut
 		return nil, fmt.Errorf(constants.ErrFailedToGenerateToken+": %w", err)
 	}
 
-	logger.Log.Info().Int("user_id", user.ID).Str("phone", phoneNumber).Msg("Login successful")
-
-	return &dto.AuthResponse{
+	// Prepare base response
+	response := &dto.LoginResponse{
 		User: &dto.UserResponse{
 			ID:            user.ID,
 			PhoneNumber:   user.PhoneNumber,
@@ -188,7 +213,69 @@ func (s *authService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Aut
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresIn:    int(constants.AccessTokenTTL.Seconds()),
-	}, nil
+	}
+
+	// Fetch role-specific profile
+	if user.Role == entity.RoleDriver {
+		// Fetch driver profile
+		driverProfile, err := s.driverRepo.FindByUserID(ctx, user.ID)
+		if err != nil {
+			logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to fetch driver profile")
+			// Don't fail login, but log warning
+		} else {
+			// Determine verification status based on is_verified and rejection_reason
+			verificationStatus := constants.VerificationStatusPending
+			if driverProfile.IsVerified {
+				verificationStatus = constants.VerificationStatusVerified
+			} else if driverProfile.RejectionReason != nil && *driverProfile.RejectionReason != "" {
+				verificationStatus = constants.VerificationStatusRejected
+			}
+
+			response.DriverProfile = &dto.DriverProfileResponse{
+				ID:                   driverProfile.ID,
+				UserID:               driverProfile.UserID,
+				VehicleType:          driverProfile.VehicleType,
+				VehiclePlate:         driverProfile.VehiclePlate,
+				VehicleBrand:         driverProfile.VehicleBrand,
+				VehicleModel:         driverProfile.VehicleModel,
+				VehicleColor:         driverProfile.VehicleColor,
+				IsVerified:           driverProfile.IsVerified,
+				VerificationStatus:   verificationStatus,
+				RejectionReason:      driverProfile.RejectionReason,
+				IsActive:             driverProfile.IsActive,
+				TotalCompletedOrders: driverProfile.TotalCompletedOrders,
+				RatingAvg:            driverProfile.RatingAvg,
+				Documents: &dto.Documents{
+					KTPUploaded:  driverProfile.KTPPhoto != nil && *driverProfile.KTPPhoto != "",
+					SIMUploaded:  driverProfile.SIMPhoto != nil && *driverProfile.SIMPhoto != "",
+					STNKUploaded: driverProfile.STNKPhoto != nil && *driverProfile.STNKPhoto != "",
+					KTMUploaded:  driverProfile.KTMPhoto != nil && *driverProfile.KTMPhoto != "",
+				},
+			}
+			logger.Log.Info().Int("driver_id", driverProfile.ID).Msg("Driver profile fetched")
+		}
+	} else if user.Role == entity.RolePassenger {
+		// Fetch passenger profile
+		passengerProfile, err := s.passengerRepo.FindByUserID(ctx, user.ID)
+		if err != nil {
+			logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to fetch passenger profile")
+			// Don't fail login, but log warning
+		} else {
+			response.PassengerProfile = &dto.PassengerProfileResponse{
+				ID:                    passengerProfile.ID,
+				UserID:                passengerProfile.UserID,
+				EmergencyContactName:  passengerProfile.EmergencyContactName,
+				EmergencyContactPhone: passengerProfile.EmergencyContactPhone,
+				HomeAddress:           passengerProfile.HomeAddress,
+				TotalCompletedOrders:  passengerProfile.TotalCompletedOrders,
+			}
+			logger.Log.Info().Int("passenger_id", passengerProfile.ID).Msg("Passenger profile fetched")
+		}
+	}
+
+	logger.Log.Info().Int("user_id", user.ID).Str("phone", phoneNumber).Str("role", string(user.Role)).Msg("Login successful")
+
+	return response, nil
 }
 
 func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenResponse, error) {
@@ -264,38 +351,11 @@ func (s *authService) Logout(ctx context.Context, refreshToken string) error {
 	return nil
 }
 
-// Helper functions
+// createRefreshToken creates a refresh token
 func (s *authService) createRefreshToken(ctx context.Context, userID int, userType, deviceInfo string) (string, error) {
-	// Generate random token
-	tokenBytes := make([]byte, constants.RefreshTokenBytes)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		logger.Log.Error().Err(err).Msg("Failed to generate random bytes for refresh token")
-		return "", err
-	}
-	token := hex.EncodeToString(tokenBytes)
-
-	// Hash token for storage
-	tokenHash := hashToken(token)
-
-	// Create token record
-	refreshToken := &entity.RefreshToken{
-		UserID:     userID,
-		UserType:   userType,
-		TokenHash:  tokenHash,
-		DeviceInfo: &deviceInfo,
-		ExpiresAt:  time.Now().Add(constants.RefreshTokenTTL),
-		IsRevoked:  false,
-	}
-
-	if err := s.refreshTokenRepo.Create(ctx, refreshToken); err != nil {
-		logger.Log.Error().Err(err).Int("user_id", userID).Msg("Failed to save refresh token")
-		return "", err
-	}
-
-	return token, nil
+	return s.tokenHelper.CreateRefreshToken(ctx, userID, userType, deviceInfo)
 }
 
 func hashToken(token string) string {
-	hash := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(hash[:])
+	return HashToken(token)
 }

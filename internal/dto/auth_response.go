@@ -24,3 +24,23 @@ type TokenResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int    `json:"expires_in"`
 }
+
+// LoginResponse is a unified response for login that includes role-specific profile
+type LoginResponse struct {
+	User             *UserResponse             `json:"user"`
+	PassengerProfile *PassengerProfileResponse `json:"passenger_profile,omitempty"` // Only for PASSENGER role
+	DriverProfile    *DriverProfileResponse    `json:"driver_profile,omitempty"`    // Only for DRIVER role
+	AccessToken      string                    `json:"access_token"`
+	RefreshToken     string                    `json:"refresh_token"`
+	ExpiresIn        int                       `json:"expires_in"` // seconds
+}
+
+// PassengerProfileResponse represents passenger profile data
+type PassengerProfileResponse struct {
+	ID                    int     `json:"id"`
+	UserID                int     `json:"user_id"`
+	EmergencyContactName  *string `json:"emergency_contact_name,omitempty"`
+	EmergencyContactPhone *string `json:"emergency_contact_phone,omitempty"`
+	HomeAddress           *string `json:"home_address,omitempty"`
+	TotalCompletedOrders  int     `json:"total_completed_orders"`
+}
