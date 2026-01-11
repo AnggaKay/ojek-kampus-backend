@@ -22,11 +22,11 @@ func NewAuthHandler(authService service.AuthService) *AuthHandler {
 // @Tags Auth
 // @Accept json
 // @Produce json
-// @Param request body dto.RegisterRequest true "Registration data"
+// @Param request body dto.RegisterPassengerRequest true "Registration data"
 // @Success 201 {object} dto.Response
 // @Router /api/auth/register/passenger [post]
 func (h *AuthHandler) RegisterPassenger(c echo.Context) error {
-	var req dto.RegisterRequest
+	var req dto.RegisterPassengerRequest
 
 	if err := middleware.ValidateRequest(c, &req); err != nil {
 		return err

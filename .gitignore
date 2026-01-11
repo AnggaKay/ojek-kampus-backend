@@ -24,6 +24,7 @@ uploads/*
 uploads/drivers/*
 !uploads/drivers/.gitkeep
 
-db/
+uploads/
 postman/
+db/
 docs/

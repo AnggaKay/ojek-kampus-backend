@@ -7,6 +7,7 @@ import (
 
 	"github.com/AnggaKay/ojek-kampus-backend/internal/dto"
 	"github.com/AnggaKay/ojek-kampus-backend/internal/entity"
+	"github.com/AnggaKay/ojek-kampus-backend/internal/mapper"
 	"github.com/AnggaKay/ojek-kampus-backend/internal/repository"
 	"github.com/AnggaKay/ojek-kampus-backend/pkg/constants"
 	jwtPkg "github.com/AnggaKay/ojek-kampus-backend/pkg/jwt"
@@ -221,41 +222,8 @@ func (s *driverService) RegisterDriver(
 
 	logger.Log.Info().Int("user_id", user.ID).Msg("Driver registration completed successfully")
 
-	// 12. Build response
-	return &dto.DriverAuthResponse{
-		User: &dto.UserResponse{
-			ID:            user.ID,
-			PhoneNumber:   user.PhoneNumber,
-			Email:         user.Email,
-			FullName:      user.FullName,
-			Role:          user.Role,
-			Status:        user.Status,
-			PhoneVerified: user.PhoneVerified,
-		},
-		DriverProfile: &dto.DriverProfileResponse{
-			ID:                   driverProfile.ID,
-			UserID:               driverProfile.UserID,
-			VehicleType:          driverProfile.VehicleType,
-			VehiclePlate:         driverProfile.VehiclePlate,
-			VehicleBrand:         driverProfile.VehicleBrand,
-			VehicleModel:         driverProfile.VehicleModel,
-			VehicleColor:         driverProfile.VehicleColor,
-			IsVerified:           driverProfile.IsVerified,
-			VerificationStatus:   constants.VerificationStatusPending,
-			IsActive:             driverProfile.IsActive,
-			TotalCompletedOrders: driverProfile.TotalCompletedOrders,
-			RatingAvg:            driverProfile.RatingAvg,
-			Documents: &dto.Documents{
-				KTPUploaded:  driverProfile.KTPPhoto != nil,
-				SIMUploaded:  driverProfile.SIMPhoto != nil,
-				STNKUploaded: driverProfile.STNKPhoto != nil,
-				KTMUploaded:  driverProfile.KTMPhoto != nil,
-			},
-		},
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiresIn:    int(constants.AccessTokenTTL.Seconds()),
-	}, nil
+	// 12. Build response using mapper
+	return mapper.BuildDriverAuthResponse(user, driverProfile, accessToken, refreshToken, int(constants.AccessTokenTTL.Seconds())), nil
 }
 
 // createRefreshToken creates a refresh token

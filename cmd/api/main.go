@@ -103,8 +103,8 @@ func main() {
 
 	// Start server
 	logger.Log.Info().Str("port", cfg.Server.Port).Msg("Server starting")
-	fmt.Printf("\n🚀 Server starting on port %s...\n", cfg.Server.Port)
-	fmt.Println("📋 Available endpoints:")
+	fmt.Printf("\n Server starting on port %s...\n", cfg.Server.Port)
+	fmt.Println(" Available endpoints:")
 	fmt.Println("   GET  /health")
 	fmt.Println("   POST /api/auth/register/passenger")
 	fmt.Println("   POST /api/auth/register/driver (multipart/form-data)")

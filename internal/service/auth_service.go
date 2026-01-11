@@ -7,6 +7,7 @@ import (
 
 	"github.com/AnggaKay/ojek-kampus-backend/internal/dto"
 	"github.com/AnggaKay/ojek-kampus-backend/internal/entity"
+	"github.com/AnggaKay/ojek-kampus-backend/internal/mapper"
 	"github.com/AnggaKay/ojek-kampus-backend/internal/repository"
 	"github.com/AnggaKay/ojek-kampus-backend/pkg/constants"
 	jwtPkg "github.com/AnggaKay/ojek-kampus-backend/pkg/jwt"
@@ -16,7 +17,7 @@ import (
 )
 
 type AuthService interface {
-	RegisterPassenger(ctx context.Context, req dto.RegisterRequest) (*dto.AuthResponse, error)
+	RegisterPassenger(ctx context.Context, req dto.RegisterPassengerRequest) (*dto.AuthResponse, error)
 	Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
 	RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenResponse, error)
 	Logout(ctx context.Context, refreshToken string) error
@@ -45,7 +46,7 @@ func NewAuthService(
 	}
 }
 
-func (s *authService) RegisterPassenger(ctx context.Context, req dto.RegisterRequest) (*dto.AuthResponse, error) {
+func (s *authService) RegisterPassenger(ctx context.Context, req dto.RegisterPassengerRequest) (*dto.AuthResponse, error) {
 	logger.Log.Info().Str("phone", req.PhoneNumber).Msg("Passenger registration attempt")
 
 	// Validate password
@@ -139,20 +140,7 @@ func (s *authService) RegisterPassenger(ctx context.Context, req dto.RegisterReq
 
 	logger.Log.Info().Int("user_id", user.ID).Msg("Registration completed successfully")
 
-	return &dto.AuthResponse{
-		User: &dto.UserResponse{
-			ID:            user.ID,
-			PhoneNumber:   user.PhoneNumber,
-			Email:         user.Email,
-			FullName:      user.FullName,
-			Role:          user.Role,
-			Status:        user.Status,
-			PhoneVerified: user.PhoneVerified,
-		},
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiresIn:    int(constants.AccessTokenTTL.Seconds()),
-	}, nil
+	return mapper.BuildAuthResponse(user, accessToken, refreshToken, int(constants.AccessTokenTTL.Seconds())), nil
 }
 
 func (s *authService) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
@@ -200,82 +188,48 @@ func (s *authService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Log
 	}
 
 	// Prepare base response
-	response := &dto.LoginResponse{
-		User: &dto.UserResponse{
-			ID:            user.ID,
-			PhoneNumber:   user.PhoneNumber,
-			Email:         user.Email,
-			FullName:      user.FullName,
-			Role:          user.Role,
-			Status:        user.Status,
-			PhoneVerified: user.PhoneVerified,
-		},
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiresIn:    int(constants.AccessTokenTTL.Seconds()),
-	}
+	var driverProfile *entity.DriverProfile
+	var passengerProfile *entity.PassengerProfile
 
 	// Fetch role-specific profile
 	if user.Role == entity.RoleDriver {
-		// Fetch driver profile
-		driverProfile, err := s.driverRepo.FindByUserID(ctx, user.ID)
-		if err != nil {
-			logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to fetch driver profile")
-			// Don't fail login, but log warning
-		} else {
-			// Determine verification status based on is_verified and rejection_reason
-			verificationStatus := constants.VerificationStatusPending
-			if driverProfile.IsVerified {
-				verificationStatus = constants.VerificationStatusVerified
-			} else if driverProfile.RejectionReason != nil && *driverProfile.RejectionReason != "" {
-				verificationStatus = constants.VerificationStatusRejected
-			}
-
-			response.DriverProfile = &dto.DriverProfileResponse{
-				ID:                   driverProfile.ID,
-				UserID:               driverProfile.UserID,
-				VehicleType:          driverProfile.VehicleType,
-				VehiclePlate:         driverProfile.VehiclePlate,
-				VehicleBrand:         driverProfile.VehicleBrand,
-				VehicleModel:         driverProfile.VehicleModel,
-				VehicleColor:         driverProfile.VehicleColor,
-				IsVerified:           driverProfile.IsVerified,
-				VerificationStatus:   verificationStatus,
-				RejectionReason:      driverProfile.RejectionReason,
-				IsActive:             driverProfile.IsActive,
-				TotalCompletedOrders: driverProfile.TotalCompletedOrders,
-				RatingAvg:            driverProfile.RatingAvg,
-				Documents: &dto.Documents{
-					KTPUploaded:  driverProfile.KTPPhoto != nil && *driverProfile.KTPPhoto != "",
-					SIMUploaded:  driverProfile.SIMPhoto != nil && *driverProfile.SIMPhoto != "",
-					STNKUploaded: driverProfile.STNKPhoto != nil && *driverProfile.STNKPhoto != "",
-					KTMUploaded:  driverProfile.KTMPhoto != nil && *driverProfile.KTMPhoto != "",
-				},
-			}
-			logger.Log.Info().Int("driver_id", driverProfile.ID).Msg("Driver profile fetched")
-		}
+		driverProfile, _ = s.fetchDriverProfile(ctx, user.ID)
 	} else if user.Role == entity.RolePassenger {
-		// Fetch passenger profile
-		passengerProfile, err := s.passengerRepo.FindByUserID(ctx, user.ID)
-		if err != nil {
-			logger.Log.Error().Err(err).Int("user_id", user.ID).Msg("Failed to fetch passenger profile")
-			// Don't fail login, but log warning
-		} else {
-			response.PassengerProfile = &dto.PassengerProfileResponse{
-				ID:                    passengerProfile.ID,
-				UserID:                passengerProfile.UserID,
-				EmergencyContactName:  passengerProfile.EmergencyContactName,
-				EmergencyContactPhone: passengerProfile.EmergencyContactPhone,
-				HomeAddress:           passengerProfile.HomeAddress,
-				TotalCompletedOrders:  passengerProfile.TotalCompletedOrders,
-			}
-			logger.Log.Info().Int("passenger_id", passengerProfile.ID).Msg("Passenger profile fetched")
-		}
+		passengerProfile, _ = s.fetchPassengerProfile(ctx, user.ID)
 	}
 
 	logger.Log.Info().Int("user_id", user.ID).Str("phone", phoneNumber).Str("role", string(user.Role)).Msg("Login successful")
 
-	return response, nil
+	return mapper.BuildLoginResponse(
+		user,
+		accessToken,
+		refreshToken,
+		int(constants.AccessTokenTTL.Seconds()),
+		passengerProfile,
+		driverProfile,
+	), nil
+}
+
+// fetchDriverProfile fetches driver profile by user ID
+func (s *authService) fetchDriverProfile(ctx context.Context, userID int) (*entity.DriverProfile, error) {
+	driverProfile, err := s.driverRepo.FindByUserID(ctx, userID)
+	if err != nil {
+		logger.Log.Error().Err(err).Int("user_id", userID).Msg("Failed to fetch driver profile")
+		return nil, err
+	}
+	logger.Log.Info().Int("driver_id", driverProfile.ID).Msg("Driver profile fetched")
+	return driverProfile, nil
+}
+
+// fetchPassengerProfile fetches passenger profile by user ID
+func (s *authService) fetchPassengerProfile(ctx context.Context, userID int) (*entity.PassengerProfile, error) {
+	passengerProfile, err := s.passengerRepo.FindByUserID(ctx, userID)
+	if err != nil {
+		logger.Log.Error().Err(err).Int("user_id", userID).Msg("Failed to fetch passenger profile")
+		return nil, err
+	}
+	logger.Log.Info().Int("passenger_id", passengerProfile.ID).Msg("Passenger profile fetched")
+	return passengerProfile, nil
 }
 
 func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenResponse, error) {

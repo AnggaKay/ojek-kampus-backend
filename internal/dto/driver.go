@@ -1,6 +1,10 @@
 package dto
 
-// RegisterDriverRequest represents driver registration request
+// ============================================================================
+// Driver Request DTOs
+// ============================================================================
+
+// RegisterDriverRequest represents driver registration request (multipart form)
 type RegisterDriverRequest struct {
 	PhoneNumber  string `form:"phone_number" validate:"required"`
 	Password     string `form:"password" validate:"required,min=8"`
@@ -10,8 +14,20 @@ type RegisterDriverRequest struct {
 	VehicleBrand string `form:"vehicle_brand"`
 	VehicleModel string `form:"vehicle_model"`
 	VehicleColor string `form:"vehicle_color"`
-	// Files will be handled separately via multipart form
+	// Files are handled separately via multipart form
 }
+
+// UpdateDriverProfileRequest represents driver profile update request
+type UpdateDriverProfileRequest struct {
+	VehiclePlate *string `json:"vehicle_plate,omitempty"`
+	VehicleBrand *string `json:"vehicle_brand,omitempty"`
+	VehicleModel *string `json:"vehicle_model,omitempty"`
+	VehicleColor *string `json:"vehicle_color,omitempty"`
+}
+
+// ============================================================================
+// Driver Response DTOs
+// ============================================================================
 
 // DriverProfileResponse represents driver profile data
 type DriverProfileResponse struct {
@@ -19,9 +35,9 @@ type DriverProfileResponse struct {
 	UserID               int        `json:"user_id"`
 	VehicleType          string     `json:"vehicle_type"`
 	VehiclePlate         string     `json:"vehicle_plate"`
-	VehicleBrand         *string    `json:"vehicle_brand"`
-	VehicleModel         *string    `json:"vehicle_model"`
-	VehicleColor         *string    `json:"vehicle_color"`
+	VehicleBrand         *string    `json:"vehicle_brand,omitempty"`
+	VehicleModel         *string    `json:"vehicle_model,omitempty"`
+	VehicleColor         *string    `json:"vehicle_color,omitempty"`
 	IsVerified           bool       `json:"is_verified"`
 	VerificationStatus   string     `json:"verification_status"`
 	RejectionReason      *string    `json:"rejection_reason,omitempty"`
@@ -31,15 +47,7 @@ type DriverProfileResponse struct {
 	Documents            *Documents `json:"documents,omitempty"`
 }
 
-// Documents represents document upload status
-type Documents struct {
-	KTPUploaded  bool `json:"ktp_uploaded"`
-	SIMUploaded  bool `json:"sim_uploaded"`
-	STNKUploaded bool `json:"stnk_uploaded"`
-	KTMUploaded  bool `json:"ktm_uploaded"`
-}
-
-// DriverAuthResponse represents driver authentication response
+// DriverAuthResponse represents driver authentication response (for registration)
 type DriverAuthResponse struct {
 	User          *UserResponse          `json:"user"`
 	DriverProfile *DriverProfileResponse `json:"driver_profile"`
