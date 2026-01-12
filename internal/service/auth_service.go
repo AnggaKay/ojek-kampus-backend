@@ -109,11 +109,12 @@ func (s *authService) RegisterPassenger(ctx context.Context, req dto.RegisterPas
 
 	// Create passenger profile
 	passengerProfile := &entity.PassengerProfile{
-		UserID:                user.ID,
-		EmergencyContactName:  nil,
-		EmergencyContactPhone: nil,
-		HomeAddress:           nil,
-		TotalCompletedOrders:  0,
+		UserID:             user.ID,
+		ProfilePicture:     nil,
+		FCMToken:           nil,
+		TotalOrders:        0,
+		TotalCancellations: 0,
+		RatingAvg:          0.0,
 	}
 
 	if err := s.passengerRepo.Create(ctx, passengerProfile); err != nil {

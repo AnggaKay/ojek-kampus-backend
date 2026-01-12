@@ -34,12 +34,13 @@ func ToPassengerProfileResponse(profile *entity.PassengerProfile) *dto.Passenger
 	}
 
 	return &dto.PassengerProfileResponse{
-		ID:                    profile.ID,
-		UserID:                profile.UserID,
-		EmergencyContactName:  profile.EmergencyContactName,
-		EmergencyContactPhone: profile.EmergencyContactPhone,
-		HomeAddress:           profile.HomeAddress,
-		TotalCompletedOrders:  profile.TotalCompletedOrders,
+		ID:                 profile.ID,
+		UserID:             profile.UserID,
+		ProfilePicture:     profile.ProfilePicture,
+		FCMToken:           profile.FCMToken,
+		TotalOrders:        profile.TotalOrders,
+		TotalCancellations: profile.TotalCancellations,
+		RatingAvg:          profile.RatingAvg,
 	}
 }
 

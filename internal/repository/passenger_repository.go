@@ -26,23 +26,28 @@ func NewPassengerRepository(db *pgxpool.Pool) PassengerRepository {
 func (r *passengerRepository) Create(ctx context.Context, profile *entity.PassengerProfile) error {
 	query := `
 		INSERT INTO passenger_profiles (
-			user_id, 
-			emergency_contact_name, 
-			emergency_contact_phone, 
-			home_address
+			user_id,
+			profile_picture,
+			fcm_token
 		)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, created_at, updated_at
+		VALUES ($1, $2, $3)
+		RETURNING id, total_orders, total_cancellations, rating_avg, created_at, updated_at
 	`
 
 	err := r.db.QueryRow(
 		ctx,
 		query,
 		profile.UserID,
-		profile.EmergencyContactName,
-		profile.EmergencyContactPhone,
-		profile.HomeAddress,
-	).Scan(&profile.ID, &profile.CreatedAt, &profile.UpdatedAt)
+		profile.ProfilePicture,
+		profile.FCMToken,
+	).Scan(
+		&profile.ID,
+		&profile.TotalOrders,
+		&profile.TotalCancellations,
+		&profile.RatingAvg,
+		&profile.CreatedAt,
+		&profile.UpdatedAt,
+	)
 
 	if err != nil {
 		logger.Log.Error().Err(err).Int("user_id", profile.UserID).Msg("Failed to create passenger profile")
@@ -55,14 +60,15 @@ func (r *passengerRepository) Create(ctx context.Context, profile *entity.Passen
 
 func (r *passengerRepository) FindByID(ctx context.Context, id int) (*entity.PassengerProfile, error) {
 	query := `
-		SELECT 
-			id, 
-			user_id, 
-			emergency_contact_name, 
-			emergency_contact_phone, 
-			home_address,
-			total_completed_orders,
-			created_at, 
+		SELECT
+			id,
+			user_id,
+			profile_picture,
+			fcm_token,
+			total_orders,
+			total_cancellations,
+			rating_avg,
+			created_at,
 			updated_at
 		FROM passenger_profiles
 		WHERE id = $1
@@ -72,10 +78,11 @@ func (r *passengerRepository) FindByID(ctx context.Context, id int) (*entity.Pas
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&profile.ID,
 		&profile.UserID,
-		&profile.EmergencyContactName,
-		&profile.EmergencyContactPhone,
-		&profile.HomeAddress,
-		&profile.TotalCompletedOrders,
+		&profile.ProfilePicture,
+		&profile.FCMToken,
+		&profile.TotalOrders,
+		&profile.TotalCancellations,
+		&profile.RatingAvg,
 		&profile.CreatedAt,
 		&profile.UpdatedAt,
 	)
@@ -90,14 +97,15 @@ func (r *passengerRepository) FindByID(ctx context.Context, id int) (*entity.Pas
 
 func (r *passengerRepository) FindByUserID(ctx context.Context, userID int) (*entity.PassengerProfile, error) {
 	query := `
-		SELECT 
-			id, 
-			user_id, 
-			emergency_contact_name, 
-			emergency_contact_phone, 
-			home_address,
-			total_completed_orders,
-			created_at, 
+		SELECT
+			id,
+			user_id,
+			profile_picture,
+			fcm_token,
+			total_orders,
+			total_cancellations,
+			rating_avg,
+			created_at,
 			updated_at
 		FROM passenger_profiles
 		WHERE user_id = $1
@@ -107,10 +115,11 @@ func (r *passengerRepository) FindByUserID(ctx context.Context, userID int) (*en
 	err := r.db.QueryRow(ctx, query, userID).Scan(
 		&profile.ID,
 		&profile.UserID,
-		&profile.EmergencyContactName,
-		&profile.EmergencyContactPhone,
-		&profile.HomeAddress,
-		&profile.TotalCompletedOrders,
+		&profile.ProfilePicture,
+		&profile.FCMToken,
+		&profile.TotalOrders,
+		&profile.TotalCancellations,
+		&profile.RatingAvg,
 		&profile.CreatedAt,
 		&profile.UpdatedAt,
 	)
@@ -126,10 +135,9 @@ func (r *passengerRepository) FindByUserID(ctx context.Context, userID int) (*en
 func (r *passengerRepository) Update(ctx context.Context, profile *entity.PassengerProfile) error {
 	query := `
 		UPDATE passenger_profiles
-		SET 
-			emergency_contact_name = $2,
-			emergency_contact_phone = $3,
-			home_address = $4,
+		SET
+			profile_picture = $2,
+			fcm_token = $3,
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING updated_at
@@ -139,9 +147,8 @@ func (r *passengerRepository) Update(ctx context.Context, profile *entity.Passen
 		ctx,
 		query,
 		profile.ID,
-		profile.EmergencyContactName,
-		profile.EmergencyContactPhone,
-		profile.HomeAddress,
+		profile.ProfilePicture,
+		profile.FCMToken,
 	).Scan(&profile.UpdatedAt)
 
 	if err != nil {

@@ -14,9 +14,8 @@ type RegisterPassengerRequest struct {
 
 // UpdatePassengerProfileRequest represents passenger profile update request
 type UpdatePassengerProfileRequest struct {
-	EmergencyContactName  *string `json:"emergency_contact_name,omitempty"`
-	EmergencyContactPhone *string `json:"emergency_contact_phone,omitempty"`
-	HomeAddress           *string `json:"home_address,omitempty"`
+	ProfilePicture *string `json:"profile_picture,omitempty"`
+	FCMToken       *string `json:"fcm_token,omitempty"`
 }
 
 // ============================================================================
@@ -25,10 +24,11 @@ type UpdatePassengerProfileRequest struct {
 
 // PassengerProfileResponse represents passenger profile data
 type PassengerProfileResponse struct {
-	ID                    int     `json:"id"`
-	UserID                int     `json:"user_id"`
-	EmergencyContactName  *string `json:"emergency_contact_name,omitempty"`
-	EmergencyContactPhone *string `json:"emergency_contact_phone,omitempty"`
-	HomeAddress           *string `json:"home_address,omitempty"`
-	TotalCompletedOrders  int     `json:"total_completed_orders"`
+	ID                 int     `json:"id"`
+	UserID             int     `json:"user_id"`
+	ProfilePicture     *string `json:"profile_picture,omitempty"`
+	FCMToken           *string `json:"fcm_token,omitempty"`
+	TotalOrders        int     `json:"total_orders"`
+	TotalCancellations int     `json:"total_cancellations"`
+	RatingAvg          float64 `json:"rating_avg"`
 }
