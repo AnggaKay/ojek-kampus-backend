@@ -13,6 +13,7 @@ type Config struct {
 	Database DatabaseConfig
 	JWT      JWTConfig
 	Server   ServerConfig
+	WhatsApp WhatsAppConfig
 }
 
 // DatabaseConfig holds database configuration
@@ -38,6 +39,14 @@ type ServerConfig struct {
 	Timezone    string
 }
 
+// WhatsAppConfig holds WhatsApp API configuration
+type WhatsAppConfig struct {
+	InstanceID   string
+	APIToken     string
+	BaseURL      string
+	SenderNumber string
+}
+
 // LoadConfig loads configuration from environment variables
 func LoadConfig() (*Config, error) {
 	config := &Config{
@@ -57,6 +66,12 @@ func LoadConfig() (*Config, error) {
 			Port:        getEnv("PORT", constants.DefaultPort),
 			Environment: getEnv("ENVIRONMENT", "development"),
 			Timezone:    getEnv("TZ", "Asia/Jakarta"),
+		},
+		WhatsApp: WhatsAppConfig{
+			InstanceID:   getEnv("WHATSAPP_INSTANCE_ID", ""),
+			APIToken:     getEnv("WHATSAPP_API_TOKEN", ""),
+			BaseURL:      getEnv("WHATSAPP_BASE_URL", "https://ultramsg.com/api"),
+			SenderNumber: getEnv("WHATSAPP_SENDER_NUMBER", ""),
 		},
 	}
 

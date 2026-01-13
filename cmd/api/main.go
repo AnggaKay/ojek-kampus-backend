@@ -13,6 +13,7 @@ import (
 	"github.com/AnggaKay/ojek-kampus-backend/pkg/database"
 	"github.com/AnggaKay/ojek-kampus-backend/pkg/logger"
 	"github.com/AnggaKay/ojek-kampus-backend/pkg/storage"
+	"github.com/AnggaKay/ojek-kampus-backend/pkg/whatsapp"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
@@ -47,21 +48,33 @@ func main() {
 	fileStorage := storage.NewLocalStorage(constants.UploadDirectory)
 	logger.Log.Info().Str("upload_dir", constants.UploadDirectory).Msg("File storage initialized")
 
+	// Initialize WhatsApp client
+	whatsappClient := whatsapp.NewWhatsAppClient(
+		cfg.WhatsApp.InstanceID,
+		cfg.WhatsApp.APIToken,
+		cfg.WhatsApp.BaseURL,
+		cfg.WhatsApp.SenderNumber,
+	)
+	logger.Log.Info().Msg("WhatsApp client initialized")
+
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
 	passengerRepo := repository.NewPassengerRepository(db)
 	driverRepo := repository.NewDriverRepository(db)
+	otpRepo := repository.NewOTPRepository(db)
 
 	// Initialize services
 	authService := service.NewAuthService(userRepo, passengerRepo, driverRepo, refreshTokenRepo)
 	driverService := service.NewDriverService(userRepo, driverRepo, refreshTokenRepo, fileStorage)
+	otpService := service.NewOTPService(otpRepo, whatsappClient)
 
 	// Initialize handlers
 	healthHandler := handler.NewHealthHandler()
 	authHandler := handler.NewAuthHandler(authService)
 	driverHandler := handler.NewDriverHandler(driverService)
 	documentHandler := handler.NewDocumentHandler(constants.UploadDirectory)
+	otpHandler := handler.NewOTPHandler(otpService)
 
 	// Initialize Echo
 	e := echo.New()
@@ -85,6 +98,9 @@ func main() {
 
 	// Auth routes (public)
 	auth := api.Group("/auth")
+	auth.POST("/send-otp", otpHandler.SendOTP)
+	auth.POST("/verify-otp", otpHandler.VerifyOTP)
+	auth.POST("/resend-otp", otpHandler.ResendOTP)
 	auth.POST("/register/passenger", authHandler.RegisterPassenger)
 	auth.POST("/register/driver", driverHandler.RegisterDriver)
 	auth.POST("/login", authHandler.Login)
@@ -103,9 +119,12 @@ func main() {
 
 	// Start server
 	logger.Log.Info().Str("port", cfg.Server.Port).Msg("Server starting")
-	fmt.Printf("\n Server starting on port %s...\n", cfg.Server.Port)
-	fmt.Println(" Available endpoints:")
+	fmt.Printf("\n🚀 Server starting on port %s...\n", cfg.Server.Port)
+	fmt.Println(" 📡 Available endpoints:")
 	fmt.Println("   GET  /health")
+	fmt.Println("   POST /api/auth/send-otp")
+	fmt.Println("   POST /api/auth/verify-otp")
+	fmt.Println("   POST /api/auth/resend-otp")
 	fmt.Println("   POST /api/auth/register/passenger")
 	fmt.Println("   POST /api/auth/register/driver (multipart/form-data)")
 	fmt.Println("   POST /api/auth/login")
